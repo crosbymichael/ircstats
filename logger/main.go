@@ -11,14 +11,14 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 )
 
 var (
-	server  string
-	channel string
-	nick    string
-	verbose bool
-	nsqd    string
+	server   string
+	channels []string
+	nick     string
+	verbose  bool
 )
 
 func init() {
@@ -28,28 +28,29 @@ func init() {
 
 	flag.Parse()
 
-	if channel = flag.Arg(0); channel == "" {
-		log.Fatalln("Channel must be specified")
-	}
 	if nick == "" {
-		log.Fatalln("Nick must be specified")
+		log.Fatal("Nick must be specified")
 	}
 	if server == "" {
-		log.Fatalln("Server must be specified")
+		log.Fatal("Server must be specified")
 	}
-	nsqd = "nsqd.docker:4150"
-	/*
-		if nsqd = ircstats.GetLink("NSQD", "4150"); nsqd == "" {
-			log.Fatalln("Nsqd must be linked")
+
+	for _, arg := range flag.Args() {
+		if arg[0] != '#' {
+			log.Fatalf("Channel %s should start with #", arg)
 		}
-	*/
+		channels = append(channels, arg)
+	}
+	if len(channels) == 0 {
+		log.Fatal("No channels specified")
+	}
 }
 
 func producer(c chan *ircstats.Message, group *sync.WaitGroup) {
 	group.Add(1)
 	defer group.Done()
 
-	writer := nsq.NewWriter(nsqd)
+	writer := nsq.NewWriter("nsqd.docker:4150")
 	defer writer.Stop()
 
 	for msg := range c {
@@ -80,7 +81,10 @@ func main() {
 	go producer(c, group)
 
 	conn.AddCallback("001", func(e *irc.Event) {
-		conn.Join(channel)
+		for _, channel := range channels {
+			conn.Join(channel)
+			time.Sleep(1 * time.Second)
+		}
 	})
 
 	conn.AddCallback("PRIVMSG", func(e *irc.Event) {
